@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Study Choice by Study GO</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['"Noto Sans JP"', 'system-ui', 'sans-serif'] }
+        }
+      }
+    }
+  </script>
+  <style>
+    @keyframes floatUp {
+      0% { opacity: 1; transform: translateY(0); }
+      100% { opacity: 0; transform: translateY(-36px) scale(1.3); }
+    }
+    @keyframes votePulse {
+      0% { box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+      50% { box-shadow: 0 4px 20px rgba(59,130,246,0.22); }
+      100% { box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateX(28px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .float-up { animation: floatUp 0.75s ease-out forwards; }
+    .vote-pulse { animation: votePulse 0.5s ease; }
+    .activity-enter { animation: slideIn 0.35s ease-out; }
+    .content-fade { animation: fadeIn 0.25s ease; }
+    .rank-card { transition: transform 0.18s, box-shadow 0.18s; }
+    .rank-card:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.08); }
+    .feed-scroll::-webkit-scrollbar { width: 4px; }
+    .feed-scroll::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
+  </style>
+</head>
+<body class="bg-gray-50 font-sans">
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useCallback, useRef } = React;
+
+/* ===== Constants ===== */
+const CATEGORIES = [
+  { id: 'bookkeeping', name: '簿記' },
+  { id: 'realEstate', name: '宅建' },
+  { id: 'itPassport', name: 'ITパスポート' },
+  { id: 'university', name: '大学受験' },
+  { id: 'fp', name: 'FP' },
+  { id: 'socialIns', name: '社労士' },
+  { id: 'admin', name: '行政書士' },
+  { id: 'eiken', name: '英検' },
+  { id: 'toeic', name: 'TOEIC' },
+  { id: 'feInfo', name: '基本情報' },
+];
+
+const SECTIONS = [
+  { key: 'textbooks', label: '参考書ランキング', color: 'blue' },
+  { key: 'stores', label: '店舗ランキング', color: 'emerald' },
+  { key: 'goods', label: 'グッズランキング', color: 'violet' },
+];
+
+const FAKE_USERS = [
+  'T.N.','S.T.','S.Z.','T.H.','I.T.',
+  'W.B.','Y.M.','N.M.','K.B.','K.T.',
+  'Y.S.','Y.D.','M.M.','I.U.','K.M.',
+];
+
+function mi(prefix, rows) {
+  return rows.map(([name, votes, rating], i) => ({ id: prefix + i, name, votes, rating }));
+}
+
+/* ===== Dummy Data (10 categories x 3 sections x 5 items) ===== */
+const INITIAL_DATA = {
+  bookkeeping: {
+    textbooks: mi('bkt', [
+      ['スッキリわかる日商簿記3級', 342, 4.5],
+      ['みんなが欲しかった簿記の教科書', 298, 4.3],
+      ['合格テキスト日商簿記2級', 256, 4.1],
+      ['パブロフ流でみんな合格', 234, 4.4],
+      ['イメージで攻略わかる簿記', 189, 3.9],
+    ]),
+    stores: mi('bks', [
+      ['勉強カフェ 新宿エリア店', 280, 4.2],
+      ['自習室プラス 池袋店', 245, 4.0],
+      ['TAC 新宿校 自習室', 223, 4.3],
+      ['資格の大原 水道橋校', 198, 3.8],
+      ['コワーキング BASE 横浜店', 167, 4.1],
+    ]),
+    goods: mi('bkg', [
+      ['CASIO 実務電卓 JS-20DC', 312, 4.7],
+      ['仕訳暗記カード', 245, 4.2],
+      ['簿記専用ルーズリーフ B5', 198, 4.0],
+      ['ポモドーロタイマー', 176, 4.3],
+      ['蛍光マーカー5色セット', 145, 3.8],
+    ]),
+  },
+  realEstate: {
+    textbooks: mi('ret', [
+      ['らくらく宅建塾', 378, 4.6],
+      ['みんなが欲しかった宅建の教科書', 312, 4.4],
+      ['宅建合格のトリセツ', 267, 4.2],
+      ['わかって合格る宅建', 231, 4.0],
+      ['出る順宅建合格テキスト', 198, 4.1],
+    ]),
+    stores: mi('res', [
+      ['LEC 渋谷駅前校 自習室', 295, 4.3],
+      ['勉強カフェ 大阪梅田店', 260, 4.4],
+      ['スタディラウンジ 名古屋栄店', 234, 4.1],
+      ['日建学院 新宿校', 201, 3.9],
+      ['有料自習室 i-Space 横浜店', 187, 4.2],
+    ]),
+    goods: mi('reg', [
+      ['宅建用語フラッシュカード', 256, 4.3],
+      ['法令集ポケット版', 223, 4.1],
+      ['分野別整理ノート', 198, 4.0],
+      ['デスクライト BenQ', 167, 4.5],
+      ['耳栓（集中用）', 134, 3.7],
+    ]),
+  },
+  itPassport: {
+    textbooks: mi('itt', [
+      ['キタミ式イラストIT塾', 356, 4.6],
+      ['いちばんやさしいITパスポート', 298, 4.3],
+      ['かんたん合格ITパスポート', 245, 4.1],
+      ['栢木先生のITパスポート教室', 212, 4.2],
+      ['出るとこだけ！ITパスポート', 187, 3.9],
+    ]),
+    stores: mi('its', [
+      ['スタバ 秋葉原駅前店', 267, 4.2],
+      ['勉強カフェ 渋谷スタジオ', 234, 4.3],
+      ['自習室 CUBE 新宿店', 201, 4.0],
+      ['コワーキング WeWork 六本木', 178, 4.1],
+      ['千代田区立図書館', 156, 3.8],
+    ]),
+    goods: mi('itg', [
+      ['IT用語単語帳', 234, 4.1],
+      ['タブレットスタンド', 201, 4.3],
+      ['ワイヤレスイヤホン', 189, 4.4],
+      ['デジタルノート reMarkable', 156, 4.6],
+      ['目薬セット', 123, 3.6],
+    ]),
+  },
+  university: {
+    textbooks: mi('unt', [
+      ['チャート式 基礎からの数学', 412, 4.7],
+      ['鉄緑会 東大英単語熟語 鉄壁', 378, 4.5],
+      ['物理のエッセンス', 334, 4.4],
+      ['実力をつける日本史100題', 289, 4.2],
+      ['入試現代文へのアクセス', 256, 4.1],
+    ]),
+    stores: mi('uns', [
+      ['駿台 お茶の水校 自習室', 312, 4.3],
+      ['河合塾 新宿校', 289, 4.4],
+      ['東進 池袋校', 256, 4.2],
+      ['Z会 教室 渋谷', 234, 4.1],
+      ['勉強カフェ 吉祥寺店', 201, 4.0],
+    ]),
+    goods: mi('ung', [
+      ['赤本ノート', 298, 4.3],
+      ['uni ジェットストリーム', 267, 4.5],
+      ['コクヨ 暗記用ペンセット', 234, 4.2],
+      ['学習タイマー', 201, 4.1],
+      ['ブックスタンド', 178, 3.9],
+    ]),
+  },
+  fp: {
+    textbooks: mi('fpt', [
+      ['みんなが欲しかったFPの教科書', 312, 4.5],
+      ['史上最強のFP3級テキスト', 267, 4.2],
+      ['うかる！FP2級', 234, 4.3],
+      ['ゼロからスタート！FP', 198, 4.0],
+      ['FP攻略問題集', 167, 3.9],
+    ]),
+    stores: mi('fps', [
+      ['勉強カフェ 飯田橋店', 256, 4.2],
+      ['タリーズ 丸の内店', 223, 4.0],
+      ['自習室プラス 渋谷店', 198, 4.1],
+      ['コメダ珈琲 池袋東口店', 167, 3.8],
+      ['有料自習室 CUBE 品川店', 145, 4.0],
+    ]),
+    goods: mi('fpg', [
+      ['金融電卓 CASIO FC-200V', 278, 4.6],
+      ['FP用語カード', 234, 4.1],
+      ['ライフプラン表テンプレート', 189, 4.0],
+      ['付箋セット', 156, 3.8],
+      ['A4クリアファイル', 134, 3.7],
+    ]),
+  },
+  socialIns: {
+    textbooks: mi('sit', [
+      ['みんなが欲しかった社労士の教科書', 298, 4.4],
+      ['ユーキャン社労士 速習レッスン', 256, 4.2],
+      ['社労士合格のトリセツ', 223, 4.1],
+      ['出る順社労士', 198, 4.0],
+      ['うかるぞ社労士', 167, 3.9],
+    ]),
+    stores: mi('sis', [
+      ['自習室プラス 新宿店', 267, 4.3],
+      ['LEC 水道橋校 自習室', 234, 4.1],
+      ['勉強カフェ 神保町店', 212, 4.4],
+      ['資格の大原 池袋校', 189, 4.0],
+      ['スタバ 飯田橋店', 156, 4.2],
+    ]),
+    goods: mi('sig', [
+      ['横断整理カード', 245, 4.2],
+      ['法改正まとめシート', 212, 4.1],
+      ['B5ルーズリーフ', 178, 3.9],
+      ['デスクオーガナイザー', 156, 4.0],
+      ['ブルーライトカットメガネ', 134, 4.3],
+    ]),
+  },
+  admin: {
+    textbooks: mi('adt', [
+      ['うかる！行政書士 総合テキスト', 312, 4.5],
+      ['みんなが欲しかった行政書士の教科書', 278, 4.3],
+      ['合格革命 行政書士', 245, 4.2],
+      ['出る順行政書士', 212, 4.0],
+      ['フォーサイト行政書士', 189, 4.1],
+    ]),
+    stores: mi('ads', [
+      ['伊藤塾 渋谷校 自習室', 289, 4.4],
+      ['勉強カフェ 溜池山王店', 256, 4.2],
+      ['自習室 i-Space 新宿店', 234, 4.5],
+      ['LEC 池袋校', 201, 4.0],
+      ['タリーズ 九段下店', 178, 4.1],
+    ]),
+    goods: mi('adg', [
+      ['行政書士六法', 267, 4.3],
+      ['判例カード', 223, 4.1],
+      ['条文暗記シート', 198, 4.0],
+      ['タイムロッキングコンテナ', 167, 4.2],
+      ['ノイズキャンセリングイヤホン', 145, 4.5],
+    ]),
+  },
+  eiken: {
+    textbooks: mi('ekt', [
+      ['英検準1級 でる順パス単', 334, 4.5],
+      ['英検2級 過去6回全問題集', 289, 4.3],
+      ['英検準1級 総合対策教本', 245, 4.2],
+      ['英検1級 長文読解問題120', 212, 4.1],
+      ['面接大特訓シリーズ', 178, 4.0],
+    ]),
+    stores: mi('eks', [
+      ['勉強カフェ 恵比寿店', 278, 4.3],
+      ['英会話カフェ LanCul 下北沢', 245, 4.1],
+      ['自習室プラス 横浜店', 212, 4.0],
+      ['スタバ 表参道店', 189, 3.9],
+      ['目黒区立図書館', 167, 4.2],
+    ]),
+    goods: mi('ekg', [
+      ['英単語カードリング', 256, 4.2],
+      ['CDプレーヤー', 212, 3.9],
+      ['音読用マイク', 189, 4.1],
+      ['英文法ポスター', 156, 3.8],
+      ['洋書リーディングセット', 134, 4.3],
+    ]),
+  },
+  toeic: {
+    textbooks: mi('tot', [
+      ['金のフレーズ', 398, 4.7],
+      ['公式TOEIC L&R 問題集', 356, 4.5],
+      ['1駅1題 TOEIC L&R TEST', 298, 4.3],
+      ['TOEIC TEST 特急シリーズ', 267, 4.2],
+      ['世界一わかりやすいTOEIC', 234, 4.1],
+    ]),
+    stores: mi('tos', [
+      ['勉強カフェ 品川店', 289, 4.2],
+      ['英語専用自習室 E-Space 新宿', 256, 4.4],
+      ['スタバ 六本木ヒルズ店', 223, 4.1],
+      ['コワーキング WeWork 丸の内', 198, 4.0],
+      ['タリーズ 渋谷駅前店', 167, 3.9],
+    ]),
+    goods: mi('tog', [
+      ['TOEIC用ワイヤレスイヤホン', 278, 4.5],
+      ['模試タイマー', 234, 4.2],
+      ['リスニング用スピーカー', 198, 4.1],
+      ['英語日記ノート', 167, 3.9],
+      ['スコア管理シート', 145, 3.8],
+    ]),
+  },
+  feInfo: {
+    textbooks: mi('fet', [
+      ['キタミ式イラストIT塾 基本情報', 323, 4.5],
+      ['かんたん合格 基本情報', 278, 4.3],
+      ['基本情報技術者 合格教本', 245, 4.2],
+      ['出るとこだけ！基本情報', 212, 4.0],
+      ['アルゴリズム解法トレーニング', 189, 4.1],
+    ]),
+    stores: mi('fes', [
+      ['勉強カフェ 秋葉原店', 267, 4.3],
+      ['自習室 CUBE 新宿南口店', 234, 4.1],
+      ['スタバ 神田駅前店', 201, 4.2],
+      ['コワーキング BASE 渋谷', 178, 4.0],
+      ['千代田区立日比谷図書館', 156, 3.9],
+    ]),
+    goods: mi('feg', [
+      ['アルゴリズムカード', 245, 4.2],
+      ['プログラミング練習帳', 212, 4.1],
+      ['ワイドモニター', 189, 4.5],
+      ['公式ノート', 156, 3.9],
+      ['タイピング練習キット', 134, 3.8],
+    ]),
+  },
+};
+
+/* ===== Utility ===== */
+function getTimeAgo(ts) {
+  const d = Math.floor((Date.now() - ts) / 1000);
+  if (d < 5) return 'たった今';
+  if (d < 60) return d + '秒前';
+  if (d < 3600) return Math.floor(d / 60) + '分前';
+  return Math.floor(d / 3600) + '時間前';
+}
+
+/* ===== Components ===== */
+function StarRating({ rating }) {
+  const filled = Math.round(rating);
+  return (
+    <span className="inline-flex items-center gap-px">
+      {[1,2,3,4,5].map(i => (
+        <span key={i} className={i <= filled ? 'text-yellow-400' : 'text-gray-300'} style={{fontSize:'11px'}}>&#9733;</span>
+      ))}
+      <span className="text-xs text-gray-400 ml-1">{rating.toFixed(1)}</span>
+    </span>
+  );
+}
+
+function RankBadge({ rank }) {
+  const cls = rank === 1 ? 'bg-yellow-400 text-yellow-900'
+    : rank === 2 ? 'bg-gray-300 text-gray-700'
+    : rank === 3 ? 'bg-amber-600 text-white'
+    : 'bg-gray-100 text-gray-500';
+  return (
+    <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${cls}`}>
+      {rank}
+    </span>
+  );
+}
+
+function RankingCard({ item, rank, onVote, voted, secKey }) {
+  const linkUrl = secKey === 'stores'
+    ? 'https://www.google.com/maps/search/' + encodeURIComponent(item.name)
+    : 'https://www.amazon.co.jp/s?k=' + encodeURIComponent(item.name);
+  const [anim, setAnim] = useState(false);
+  const handleClick = () => {
+    if (voted) return;
+    setAnim(true);
+    onVote();
+    setTimeout(() => setAnim(false), 750);
+  };
+  return (
+    <div className={`rank-card relative flex items-center gap-3 p-3 rounded-lg border border-gray-100 ${anim ? 'vote-pulse' : ''}`}>
+      <RankBadge rank={rank} />
+      <div className="flex-1 min-w-0">
+        <a href={linkUrl} target="_blank" rel="noopener noreferrer"
+          className="text-sm font-medium text-blue-700 hover:text-blue-900 hover:underline truncate block">{item.name}</a>
+        <div className="flex items-center gap-2 mt-0.5">
+          <StarRating rating={item.rating} />
+          <span className="text-xs font-semibold text-gray-500">{item.votes}票</span>
+        </div>
+      </div>
+      <button onClick={handleClick} disabled={voted}
+        className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+          voted ? 'bg-gray-100 text-gray-400 cursor-default' : 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95'
+        }`}>
+        {voted ? '投票済' : '投票'}
+      </button>
+      {anim && <span className="float-up absolute right-14 -top-1 text-blue-600 font-bold text-sm pointer-events-none">+1</span>}
+    </div>
+  );
+}
+
+function RankingSection({ title, items, colorKey, onVote, votedSet, catId, secKey }) {
+  const border = { blue:'border-blue-500', emerald:'border-emerald-500', violet:'border-violet-500' }[colorKey];
+  const bg    = { blue:'bg-blue-50', emerald:'bg-emerald-50', violet:'bg-violet-50' }[colorKey];
+  const text  = { blue:'text-blue-700', emerald:'text-emerald-700', violet:'text-violet-700' }[colorKey];
+  const sorted = [...items].sort((a, b) => b.votes - a.votes);
+  return (
+    <div className={`bg-white rounded-xl shadow-md overflow-hidden border-t-4 ${border}`}>
+      <div className={`${bg} px-5 py-3`}>
+        <h3 className={`font-bold text-sm ${text}`}>{title}</h3>
+      </div>
+      <div className="p-4 space-y-2">
+        {sorted.map((item, idx) => (
+          <RankingCard key={item.id} item={item} rank={idx + 1}
+            onVote={() => onVote(catId, secKey, item.id)}
+            voted={votedSet.has(catId + '-' + secKey + '-' + item.id)}
+            secKey={secKey} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ActivityFeed({ activities }) {
+  return (
+    <div className="h-full flex flex-col">
+      <div className="px-4 py-3 border-b border-gray-100">
+        <h3 className="font-semibold text-gray-700 text-sm">リアルタイム投票</h3>
+        <p className="text-xs text-gray-400 mt-0.5">全カテゴリの投票状況</p>
+      </div>
+      <div className="flex-1 overflow-y-auto p-3 space-y-2 feed-scroll">
+        {activities.map(a => (
+          <div key={a.id} className={`activity-enter p-2.5 rounded-lg border border-gray-100 ${a.isUser ? 'bg-blue-50 border-blue-200' : 'bg-gray-50'}`}>
+            <div className="flex items-start gap-2">
+              <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${a.isUser ? 'bg-blue-200' : 'bg-gray-200'}`}>
+                <span className={`text-xs font-medium ${a.isUser ? 'text-blue-700' : 'text-gray-600'}`}>{a.user[0]}</span>
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs text-gray-600">
+                  <span className="font-medium text-gray-800">{a.user}</span> が投票
+                </p>
+                <p className="text-xs text-gray-500 truncate">{a.item}</p>
+                <p className="text-xs text-gray-400 mt-0.5">{a.category} / {getTimeAgo(a.timestamp)}</p>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Header({ totalVotes }) {
+  return (
+    <header className="fixed top-0 left-0 right-0 bg-white border-b border-gray-200 z-50">
+      <div className="px-6 h-14 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+            <span className="text-white font-bold text-xs">SC</span>
+          </div>
+          <div className="leading-tight">
+            <h1 className="text-base font-bold text-gray-800">Study Choice</h1>
+            <p className="text-[10px] text-gray-400 -mt-0.5">by Study GO</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="hidden sm:flex items-center gap-1.5 bg-gray-50 rounded-full px-3 py-1 text-sm">
+            <span className="text-gray-500">学習時間</span>
+            <span className="font-semibold text-gray-800">150h</span>
+          </span>
+          <span className="bg-green-50 text-green-700 rounded-full px-3 py-1 text-xs font-medium">投票権あり</span>
+          <span className="bg-blue-50 text-blue-700 rounded-full px-3 py-1 text-xs font-medium">
+            本日の投票: {totalVotes}
+          </span>
+          <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+            <span className="text-blue-700 font-medium text-xs">YT</span>
+          </div>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function CategoryTabs({ active, onSelect }) {
+  return (
+    <div className="bg-white border-b border-gray-200 px-6 py-2.5">
+      <div className="flex gap-2 overflow-x-auto">
+        {CATEGORIES.map(c => (
+          <button key={c.id} onClick={() => onSelect(c.id)}
+            className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
+              active === c.id ? 'bg-blue-600 text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}>
+            {c.name}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ===== App ===== */
+function App() {
+  const [activeCat, setActiveCat] = useState('bookkeeping');
+  const [data, setData] = useState(() => JSON.parse(JSON.stringify(INITIAL_DATA)));
+  const [votedSet, setVotedSet] = useState(new Set());
+  const [activities, setActivities] = useState([]);
+  const [totalVotes, setTotalVotes] = useState(0);
+  const [, setTick] = useState(0);
+  const aidRef = useRef(0);
+
+  // Force re-render every 10s to update time-ago labels
+  useEffect(() => {
+    const t = setInterval(() => setTick(n => n + 1), 10000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Fake activity generator
+  useEffect(() => {
+    const gen = () => {
+      const cat = CATEGORIES[Math.floor(Math.random() * CATEGORIES.length)];
+      const sk = ['textbooks','stores','goods'][Math.floor(Math.random() * 3)];
+      const items = INITIAL_DATA[cat.id][sk];
+      const item = items[Math.floor(Math.random() * items.length)];
+      const user = FAKE_USERS[Math.floor(Math.random() * FAKE_USERS.length)];
+      aidRef.current += 1;
+      setActivities(prev => [{ id: 'f' + aidRef.current, user, item: item.name, category: cat.name, timestamp: Date.now(), isUser: false }, ...prev].slice(0, 25));
+    };
+    // seed initial entries
+    const inits = [];
+    for (let i = 0; i < 6; i++) {
+      const cat = CATEGORIES[Math.floor(Math.random() * CATEGORIES.length)];
+      const sk = ['textbooks','stores','goods'][Math.floor(Math.random() * 3)];
+      const items = INITIAL_DATA[cat.id][sk];
+      const item = items[Math.floor(Math.random() * items.length)];
+      const user = FAKE_USERS[Math.floor(Math.random() * FAKE_USERS.length)];
+      aidRef.current += 1;
+      inits.push({ id: 'f' + aidRef.current, user, item: item.name, category: cat.name, timestamp: Date.now() - (6 - i) * 18000, isUser: false });
+    }
+    setActivities(inits);
+    const iv = setInterval(gen, 4000);
+    return () => clearInterval(iv);
+  }, []);
+
+  const handleVote = useCallback((catId, secKey, itemId) => {
+    const vk = catId + '-' + secKey + '-' + itemId;
+    setVotedSet(prev => { const s = new Set(prev); s.add(vk); return s; });
+    setTotalVotes(prev => prev + 1);
+    setData(prev => {
+      const nd = JSON.parse(JSON.stringify(prev));
+      const it = nd[catId][secKey].find(x => x.id === itemId);
+      if (it) it.votes += 1;
+      return nd;
+    });
+    // find item name for activity
+    const it = data[catId][secKey].find(x => x.id === itemId);
+    const cn = CATEGORIES.find(c => c.id === catId).name;
+    aidRef.current += 1;
+    setActivities(prev => [{ id: 'u' + aidRef.current, user: 'あなた', item: it ? it.name : '', category: cn, timestamp: Date.now(), isUser: true }, ...prev].slice(0, 25));
+  }, [data]);
+
+  const cur = data[activeCat];
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <Header totalVotes={totalVotes} />
+      <div className="pt-14">
+        <CategoryTabs active={activeCat} onSelect={setActiveCat} />
+        <div className="flex">
+          <main className="flex-1 mr-0 lg:mr-72 p-6">
+            <div key={activeCat} className="content-fade grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {SECTIONS.map(sec => (
+                <RankingSection key={sec.key} title={sec.label} items={cur[sec.key]}
+                  colorKey={sec.color} onVote={handleVote} votedSet={votedSet}
+                  catId={activeCat} secKey={sec.key} />
+              ))}
+            </div>
+          </main>
+          <aside className="hidden lg:block fixed right-0 top-14 w-72 h-[calc(100vh-3.5rem)] bg-white border-l border-gray-200">
+            <ActivityFeed activities={activities} />
+          </aside>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
